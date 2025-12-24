@@ -1,35 +1,67 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
-#usage : hipconvertinplace-perl.sh DIRNAME [-filter=all|headers|sources|custom] [hipify-perl options]
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+HIPIFY_PERL="${SCRIPT_DIR}/hipify-perl"
 
-#hipify "inplace" all code files in specified directory.
-# This can be quite handy when dealing with an existing CUDA code base since the script
-# preserves the existing directory structure.
+usage() {
+  cat <<EOF
+Usage: $(basename "$0") [OPTIONS] <path>
+Options:
+  -h, --help          Show this help
+  --headers-only      Process only header files (*.h, *.hpp, *.hh, *.cuh)
+  --inplace           Modify files in place (default behavior)
+Examples:
+  $(basename "$0") --headers-only ./my_project
+EOF
+}
 
-#  For each code file, this script will:
-#   - If ".prehip file does not exist, copy the original code to a new file with extension ".prehip". Then hipify the code file.
-#   - If ".prehip" file exists, this is used as input to hipify.
-# (this is useful for testing improvements to the hipify-perl toolset).
+HEADERS_ONLY=0
+INPLACE=1
 
-SCRIPT_DIR="$(dirname "$(realpath "$0")")"
-SCRIPT_NAME=findcode.sh
-SEARCH_DIR=$1
-if [ "$2" = "-filter=all" ]
-then
-shift
-elif [ "$2" = "-filter=headers" ]
-then
-SCRIPT_NAME=findcode_headers.sh
-shift
-elif [ "$2" = "-filter=sources" ]
-then
-SCRIPT_NAME=findcode_sources.sh
-shift
-elif [ "$2" = "-filter=custom" ]
-then
-SCRIPT_NANE=findcode_custom.sh
-shift
+ARGS=()
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    --headers-only) HEADERS_ONLY=1; shift ;;
+    --inplace) INPLACE=1; shift ;;
+    --) shift; break ;;
+    -*) echo "Unknown option: $1"; usage; exit 1 ;;
+    *) ARGS+=("$1"); shift ;;
+  esac
+done
+
+if [[ ${#ARGS[@]} -eq 0 ]]; then
+  echo "Error: path required"
+  usage
+  exit 1
 fi
-shift
 
-$SCRIPT_DIR/hipify-perl -inplace -print-stats "$@" `$SCRIPT_DIR/$SCRIPT_NAME $SEARCH_DIR`
+TARGET_PATH="${ARGS[-1]}"
+if [[ ! -d "$TARGET_PATH" ]]; then
+  echo "Error: '$TARGET_PATH' is not a directory"
+  exit 1
+fi
+
+# Build file list
+if [[ "$HEADERS_ONLY" -eq 1 ]]; then
+  mapfile -t FILES < <(find "$TARGET_PATH" -type f \( -name '*.h' -o -name '*.hpp' -o -name '*.hh' -o -name '*.cuh' \))
+else
+  mapfile -t FILES < <(find "$TARGET_PATH" -type f \( -name '*.c' -o -name '*.cc' -o -name '*.cpp' -o -name '*.cxx' -o -name '*.cu' -o -name '*.cuh' -o -name '*.h' -o -name '*.hpp' -o -name '*.hh' \))
+fi
+
+if [[ ${#FILES[@]} -eq 0 ]]; then
+  echo "No matching files found under '$TARGET_PATH'"
+  exit 0
+fi
+
+echo "Processing ${#FILES[@]} files..."
+for f in "${FILES[@]}"; do
+  if [[ "$INPLACE" -eq 1 ]]; then
+    perl "${HIPIFY_PERL}" "${f}" --inplace
+  else
+    perl "${HIPIFY_PERL}" "${f}"
+  fi
+done
+
+echo "Done."

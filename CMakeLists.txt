@@ -460,3 +460,6 @@ if(HIPIFY_CLANG_TESTS OR HIPIFY_CLANG_TESTS_ONLY)
   set_target_properties(test-hipify-clang PROPERTIES FOLDER "Tests")
 
 endif() # if(HIPIFY_CLANG_TESTS OR HIPIFY_CLANG_TESTS_ONLY)
+
+# Include packaging configuration
+include(cmake/HipifyPackaging.cmake)
